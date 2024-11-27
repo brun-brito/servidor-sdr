@@ -53,7 +53,7 @@ const buscarProdutos = async (req, res) => {
       } else {
         return {
           busca: produtoRequisitado.nome, // Nome buscado pelo cliente
-          quantidadeSolicitada: produtoRequisitado.quantidade, // Quantidade solicitada pelo cliente
+          quantidade_solicitada: produtoRequisitado.quantidade, // Quantidade solicitada pelo cliente
           resultado: null, // Indica que não foi encontrado
           mensagem: "Nenhum produto compatível encontrado",
         };

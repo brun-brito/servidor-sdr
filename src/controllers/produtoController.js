@@ -9,20 +9,16 @@ const buscarProdutos = async (req, res) => {
   }
 
   try {
-    // Obter todos os produtos da coleção do Firestore
     const snapshot = await db.collection("produtos").get();
     if (snapshot.empty) {
       return res.status(404).json({ message: "Nenhum produto encontrado no banco." });
     }
 
-    // Preparar os produtos do Firestore
     const produtosNoBanco = snapshot.docs.map((doc) => {
       const data = doc.data();
       const vencimentoTimestamp = data.vencimento;
 
       let vencimentoFormatado = null;
-
-      // Verificar e formatar a data de vencimento, se válida
       if (
         vencimentoTimestamp &&
         typeof vencimentoTimestamp.seconds === "number"
@@ -33,11 +29,10 @@ const buscarProdutos = async (req, res) => {
       return {
         id: doc.id,
         ...data,
-        vencimento: vencimentoFormatado, // Adiciona o vencimento formatado ou null
+        vencimento: vencimentoFormatado,
       };
     });
 
-    // Configuração do Fuse.js
     const fuse = new Fuse(produtosNoBanco, {
       includeScore: true,
       keys: [
@@ -48,7 +43,6 @@ const buscarProdutos = async (req, res) => {
       threshold: 0.4,
     });
 
-    // Processar cada produto enviado pelo cliente
     const resultados = produtos.map((produtoRequisitado) => {
       if (!produtoRequisitado.nome || !produtoRequisitado.quantidade) {
         return {
@@ -58,16 +52,35 @@ const buscarProdutos = async (req, res) => {
         };
       }
 
-      const buscaQuery = {
-        nome: produtoRequisitado.nome,
-        ...(produtoRequisitado.marca && { marca: produtoRequisitado.marca }),
-        ...(produtoRequisitado.volume && { volume: produtoRequisitado.volume }),
+      // Construir objeto de busca dinamicamente, incluindo apenas valores válidos
+      const buscaQuery = {};
+      if (produtoRequisitado.nome) buscaQuery.nome = produtoRequisitado.nome;
+      if (produtoRequisitado.marca) buscaQuery.marca = produtoRequisitado.marca;
+      if (produtoRequisitado.volume) buscaQuery.volume = produtoRequisitado.volume;
+
+      const buscaPrimaria = fuse.search(buscaQuery);
+
+      // Calcula diferenças e cria resposta detalhada
+      const calcularDiferencas = (requisitado, encontrado) => {
+        const diferencas = [];
+        if (
+          requisitado.marca &&
+          requisitado.marca.toLowerCase() !== encontrado.marca.toLowerCase()
+        ) {
+          diferencas.push(`Marca encontrada: ${encontrado.marca} (buscada: ${requisitado.marca})`);
+        }
+        if (
+          requisitado.volume &&
+          requisitado.volume.toLowerCase() !== encontrado.volume.toLowerCase()
+        ) {
+          diferencas.push(`Volume encontrado: ${encontrado.volume} (buscado: ${requisitado.volume})`);
+        }
+        return diferencas;
       };
 
-      const busca = fuse.search(buscaQuery);
-
-      if (busca.length > 0) {
-        const melhorMatch = busca[0].item;
+      if (buscaPrimaria.length > 0) {
+        const melhorMatch = buscaPrimaria[0].item;
+        const diferencas = calcularDiferencas(produtoRequisitado, melhorMatch);
         const quantidadeSolicitada = produtoRequisitado.quantidade;
 
         return {
@@ -85,14 +98,41 @@ const buscarProdutos = async (req, res) => {
                 ? quantidadeSolicitada
                 : melhorMatch.quantidade,
           },
-        };
-      } else {
-        return {
-          busca: produtoRequisitado,
-          resultado: null,
-          mensagem: "Nenhum produto compatível encontrado.",
+          diferencas: diferencas.length > 0 ? diferencas : null,
+          mensagem: diferencas.length > 0
+            ? "Produto encontrado, mas com discrepâncias nos atributos."
+            : "Produto encontrado com exatidão.",
         };
       }
+
+      // Busca secundária (nome apenas)
+      const buscaSecundaria = fuse.search({ nome: produtoRequisitado.nome });
+
+      if (buscaSecundaria.length > 0) {
+        const melhorMatch = buscaSecundaria[0].item;
+        const diferencas = calcularDiferencas(produtoRequisitado, melhorMatch);
+
+        return {
+          busca: produtoRequisitado,
+          resultado_encontrado: {
+            nome: melhorMatch.nome,
+            marca: melhorMatch.marca,
+            volume: melhorMatch.volume,
+            preco: melhorMatch.preco,
+            vencimento: melhorMatch.vencimento,
+            hoje: new Date().toLocaleDateString("pt-BR"),
+            quantidade_disponivel: melhorMatch.quantidade,
+          },
+          diferencas: diferencas.length > 0 ? diferencas : null,
+          mensagem: "Produto encontrado, mas com discrepâncias nos atributos.",
+        };
+      }
+
+      return {
+        busca: produtoRequisitado,
+        resultado: null,
+        mensagem: "Nenhum produto compatível encontrado.",
+      };
     });
 
     return res.status(200).json({
@@ -107,4 +147,4 @@ const buscarProdutos = async (req, res) => {
   }
 };
 
-module.exports = { buscarProdutos };
+module.exports = { buscarProdutos };	

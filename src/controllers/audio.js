@@ -1,41 +1,63 @@
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
-// Função para processar a entrada e gerar o link do arquivo MP3
 exports.audio = (req, res) => {
-  const { hexString } = req.body; // Obtém a string hexadecimal do corpo da requisição
+  const { outputAudio, outputFilename } = req.body;
 
-  if (!hexString || typeof hexString !== 'string') {
-    return res.status(400).json({ error: 'String hexadecimal inválida ou ausente' });
+  if (!outputAudio || typeof outputAudio !== 'string') {
+    return res.status(400).json({ error: 'Campo "outputAudio" inválido ou ausente' });
+  }
+
+  if (!outputFilename || typeof outputFilename !== 'string') {
+    return res.status(400).json({ error: 'Campo "outputFilename" inválido ou ausente' });
   }
 
   try {
-    // Caminho da pasta "public"
-    const publicDir = path.join(__dirname, '..', 'public');
-
-    // Verificar se a pasta "public" existe, caso contrário, criar
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
+    // Extrair os dados reais de áudio (após `:`)
+    const match = outputAudio.match(/: (.+)$/);
+    if (!match || !match[1]) {
+      return res.status(400).json({ error: 'Formato inválido no campo "outputAudio"' });
     }
 
-    // Limpar a string para remover espaços e quebras de linha
-    const hexDataCleaned = hexString.replace(/\s+/g, '');
+    const hexData = match[1].replace(/\s+/g, ''); // Limpar espaços e quebras de linha
 
-    // Converter a sequência hexadecimal em um buffer binário
-    const binaryData = Buffer.from(hexDataCleaned, 'hex');
+    // Log do tamanho dos dados hexadecimais
+    console.log(`Tamanho dos dados hexadecimais: ${hexData.length}`);
 
-    // Salvar o arquivo MP3 localmente
-    const fileName = `audio_${Date.now()}.mp3`; // Nome único para evitar conflitos
-    const filePath = path.join(publicDir, fileName);
-    fs.writeFileSync(filePath, binaryData);
+    // Converter os dados em buffer binário
+    const binaryData = Buffer.from(hexData, 'hex');
 
-    // Construir e retornar o link público
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const fileUrl = `${baseUrl}/public/${fileName}`;
+    // Caminho para salvar o arquivo bruto
+    const rawFilePath = path.join(__dirname, '..', 'public', 'temp.raw');
+    fs.writeFileSync(rawFilePath, binaryData);
 
-    res.json({ success: true, url: fileUrl });
+    // Caminho para o arquivo MP3 final
+    const finalFilePath = path.join(__dirname, '..', 'public', outputFilename);
+
+    // Configurar o comando ffmpeg
+    const ffmpegCommand = `ffmpeg -f s16le -ar 16000 -ac 1 -i ${rawFilePath} ${finalFilePath}`;
+
+    console.log('Executando comando:', ffmpegCommand);
+
+    exec(ffmpegCommand, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Erro ao converter o arquivo com ffmpeg:', error);
+        console.error('Saída do ffmpeg:', stderr);
+        return res.status(500).json({ error: 'Erro ao converter o arquivo' });
+      }
+
+      console.log('Saída do ffmpeg:', stdout);
+      console.log('Arquivo convertido com sucesso:', finalFilePath);
+
+      // Retornar o caminho do arquivo convertido
+      res.status(200).json({ success: true, filePath: finalFilePath });
+
+      // Remover o arquivo bruto temporário
+      fs.unlinkSync(rawFilePath);
+    });
   } catch (error) {
-    console.error('Erro ao processar a string hexadecimal:', error);
-    res.status(500).json({ error: 'Erro ao processar a string hexadecimal' });
+    console.error('Erro ao processar os dados:', error);
+    res.status(500).json({ error: 'Erro ao processar os dados' });
   }
 };

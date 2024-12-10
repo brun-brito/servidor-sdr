@@ -37,7 +37,7 @@ exports.convertTextToAudio = async (req, res) => {
     await fs.promises.writeFile(filePath, buffer);
 
     console.log(`Áudio salvo em: ${filePath}`);
-    res.status(200).json({ success: true, message: "Áudio gerado com sucesso", filename });
+    res.status(200).json({ success: true, message: "Áudio gerado com sucesso", filename, path: `https://api-sdr.injectbox.com.br/v1/audio/${filename}` });
   } catch (error) {
     console.error("Erro ao gerar o áudio:", error);
     res.status(500).json({ error: "Erro ao gerar o áudio", details: error.message });

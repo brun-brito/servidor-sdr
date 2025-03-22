@@ -26,7 +26,7 @@ exports.convertTextToAudio = async (req, res) => {
   try {
     // Gerar o áudio usando a API da OpenAI
     const audioResponse = await openai.audio.speech.create({
-      model: "tts-1",
+      model: "gpt-4o-mini-tts",
       voice: "alloy",
       input: text,
     });
